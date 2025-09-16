@@ -532,6 +532,12 @@ client.once("ready", async () => {
   console.log("📋 Priority tracker update system started");
 });
 
+// Whitelist of allowed Discord invite links
+const ALLOWED_INVITE_LINKS = [
+  'discord.gg/KSWesbA2Yz',
+  'discordapp.com/invite/KSWesbA2Yz'
+];
+
 // Discord invite link detection and warning handler
 async function handleInviteLinkDetection(message) {
   // Skip if not in a guild
@@ -541,43 +547,29 @@ async function handleInviteLinkDetection(message) {
   const inviteRegex = /(https?:\/\/)?(www\.)?(discord\.(gg|io|me|li)|discordapp\.com\/invite|discord\.com\/invite)\/[^\s]+/gi;
   
   // Check if message contains Discord invite links
-  if (inviteRegex.test(message.content)) {
-    try {
-      // Send DM to the user
+  const matches = message.content.match(inviteRegex);
+  if (matches) {
+    // Check if any of the found invite links are NOT in the whitelist
+    const hasUnallowedInvite = matches.some(invite => {
+      // Normalize the invite link for comparison
+      const normalizedInvite = invite.toLowerCase()
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '');
+      
+      // Check if this invite is in the whitelist
+      return !ALLOWED_INVITE_LINKS.some(allowed => {
+        const normalizedAllowed = allowed.toLowerCase()
+          .replace(/^https?:\/\//, '')
+          .replace(/^www\./, '');
+        return normalizedInvite.includes(normalizedAllowed) || normalizedAllowed.includes(normalizedInvite);
+      });
+    });
+    
+    // Only take action if there are unallowed invite links
+    if (hasUnallowedInvite) {
       try {
-        const now = new Date();
-        const timeString = now.toLocaleDateString("en-US", { 
-          month: "2-digit", 
-          day: "2-digit", 
-          year: "numeric" 
-        }) + " " + now.toLocaleTimeString("en-US", { 
-          hour: "2-digit", 
-          minute: "2-digit", 
-          hour12: true 
-        });
-        
-        const dmEmbed = new EmbedBuilder()
-          .setTitle("🚫 **Invite Link Detected**")
-          .setColor(0xFF6B00)
-          .setDescription(`⚠️ Your message was deleted in **𝐄𝐯𝐞𝐫𝐆𝐥𝐚𝐝𝐞𝐑𝐏™** because it contained a Discord invite link.\n\n**Your message:** ${message.content}\n\nPlease do not share invite links to other servers.`)
-          .setFooter({ text: timeString });
-          
-        await message.author.send({ embeds: [dmEmbed] });
-      } catch (dmError) {
-        console.log(`❌ Could not send DM to ${message.author.tag}: ${dmError.message}`);
-      }
-      
-      // Delete the message
-      await message.delete();
-      
-      // Get guild settings to find the warning channel
-      const guildSettings = await getGuildSettings(message.guild.id);
-      
-      if (guildSettings.warnChannelId) {
-        const warnChannel = message.guild.channels.cache.get(guildSettings.warnChannelId);
-        
-        if (warnChannel) {
-          // Create warning embed
+        // Send DM to the user
+        try {
           const now = new Date();
           const timeString = now.toLocaleDateString("en-US", { 
             month: "2-digit", 
@@ -589,24 +581,58 @@ async function handleInviteLinkDetection(message) {
             hour12: true 
           });
           
-          const warnEmbed = new EmbedBuilder()
-            .setTitle("Invite Link Warning")
+          const dmEmbed = new EmbedBuilder()
+            .setTitle("🚫 **Invite Link Detected**")
             .setColor(0xFF6B00)
-            .addFields(
-              { name: "User:", value: `<@${message.author.id}>`, inline: false },
-              { name: "Channel:", value: `<#${message.channel.id}>`, inline: false },
-              { name: "Deleted Message Content:", value: message.content, inline: false }
-            )
-            .setFooter({ text: `Auto-Moderation System | ${timeString}` });
-
-          // Send warning to the designated channel
-          await warnChannel.send({ embeds: [warnEmbed] });
-          
-          console.log(`🚨 Discord invite link detected from ${message.author.tag} in #${message.channel.name} - message deleted`);
+            .setDescription(`⚠️ Your message was deleted in **𝐄𝐯𝐞𝐫𝐆𝐥𝐚𝐝𝐞𝐑𝐏™** because it contained a Discord invite link.\n\n**Your message:** ${message.content}\n\nPlease do not share invite links to other servers.`)
+            .setFooter({ text: timeString });
+            
+          await message.author.send({ embeds: [dmEmbed] });
+        } catch (dmError) {
+          console.log(`❌ Could not send DM to ${message.author.tag}: ${dmError.message}`);
         }
+        
+        // Delete the message
+        await message.delete();
+        
+        // Get guild settings to find the warning channel
+        const guildSettings = await getGuildSettings(message.guild.id);
+        
+        if (guildSettings.warnChannelId) {
+          const warnChannel = message.guild.channels.cache.get(guildSettings.warnChannelId);
+          
+          if (warnChannel) {
+            // Create warning embed
+            const now = new Date();
+            const timeString = now.toLocaleDateString("en-US", { 
+              month: "2-digit", 
+              day: "2-digit", 
+              year: "numeric" 
+            }) + " " + now.toLocaleTimeString("en-US", { 
+              hour: "2-digit", 
+              minute: "2-digit", 
+              hour12: true 
+            });
+            
+            const warnEmbed = new EmbedBuilder()
+              .setTitle("Invite Link Warning")
+              .setColor(0xFF6B00)
+              .addFields(
+                { name: "User:", value: `<@${message.author.id}>`, inline: false },
+                { name: "Channel:", value: `<#${message.channel.id}>`, inline: false },
+                { name: "Deleted Message Content:", value: message.content, inline: false }
+              )
+              .setFooter({ text: `Auto-Moderation System | ${timeString}` });
+
+            // Send warning to the designated channel
+            await warnChannel.send({ embeds: [warnEmbed] });
+            
+            console.log(`🚨 Discord invite link detected from ${message.author.tag} in #${message.channel.name} - message deleted`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error handling invite link detection:', error);
       }
-    } catch (error) {
-      console.error('❌ Error handling invite link detection:', error);
     }
   }
 }
